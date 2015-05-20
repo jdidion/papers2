@@ -1,14 +1,11 @@
+#!/usr/bin/env python
 from argparse import ArgumentParser
+import logging as log
 from papers2.schema import open_papers2
-from pyzotero import zotero
+from papers2.zotero import ZoteroImporter
 
-def export(library_id, api_key, db_path=None, library_type="user", batch_size=10, checkpoint=None):
-    p = open_papers2(db_path)
-    z = zotero.Zotero(library_id, library_type, api_key)
+# TODO: add options for filtering pubs to import
     
-    
-
-
 def main():
     parser = ArgumentParser()
     parser.add_argument("-d", "--database", default=None, help="Path to Papers2 database")
@@ -26,9 +23,23 @@ def main():
     checkpoint = None
     if args.checkpoint_file is not None:
         checkpoint = Checkpoint(args.checkpoint_file)
+
+    p = open_papers2(args.database)
+    z = ZoteroImporter(args.library_id, args.library_type, args.api_key, p)
     
-    export(args.library_id, args.api_key, args.database, args.library_type,
-        args.batch_size, checkpoint)
+    try:
+        z.begin_session(args.batch_size, checkpoint)
+        
+        for pub in p.get_pubs():
+            try:
+                z.add_pub(pub)
+
+            except Exception as e:
+                log.error("Error converting publication {0} to Zotero".format(pub.ROWID), e)
+        
+    finally:
+        p.close()
+        z.end_session()
 
 if __name__ == "__main__":
     main()
