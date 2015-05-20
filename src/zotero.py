@@ -46,6 +46,8 @@ def extract_default(pub, key):
     except:
         return None
 
+p.__table__.columns.keys()
+
 {u'DOI': u'',
  u'ISSN': u'',
  u'abstractNote': u'',

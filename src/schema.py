@@ -1,4 +1,5 @@
 from collections import namedtuple
+import os
 
 from sqlalchemy.ext.automap import automap_base
 from sqlalchemy.orm import Session
@@ -26,7 +27,7 @@ pub_type_id_to_pub_type = dict((t.id,t) for t in PubType.__values__)
 def open_papers2(db=None):
     if db is None:
         db = DEFAULTS['dbpath']
-    engine = create_engine(db)
+    engine = create_engine("sqlite:///{0}".format(os.path.abspath(db)))
     schema = automap_base()
     schema.prepare(engine, reflect=True)
     return Papers2(engine, schema)
