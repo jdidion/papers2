@@ -16,6 +16,7 @@ ITEM_TYPES = {
 }
 
 # TODO: manuscript report thesis
+# TODO: colors, keywords, collections, notes, review/rating
 
 library_id = 2082517
 api_key = 'wpWBK2BxZuCjim0ghD9aUEAd'
@@ -24,8 +25,26 @@ EXTRACTORS = dict(
     
 )
 
+class Extractor(object):
+    def __init__(self, key):
+        self.key = key
+    
+    def extract(self, pub, default=None):
+        raise NotImplementedError()
+
+def DefaultExtractor(Extractor):
+    def __init__(self, zotero_key, papers2_key):
+        Extractor.__init__(self, zotero_key)
+        self.paper2_key = papers2_key
+    
+    def extract(self, pub, default=None):
+        pass
+
 def extract_default(pub, key):
-    pass
+    try:
+        return DefaultExtractor(key, key).extract(pub)
+    except:
+        return None
 
 {u'DOI': u'',
  u'ISSN': u'',
@@ -87,7 +106,7 @@ class ZoteroImporter(object):
         # fill in template fields
         for key, value in template.iteritems():
             if key in EXTRACTORS:
-                value = EXTRACTORS[key](pub, value)
+                value = EXTRACTORS[key].extract(pub, value)
             else:
                 value = extract_default(pub, key)
             if value is not None:
