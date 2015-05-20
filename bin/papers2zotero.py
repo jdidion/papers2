@@ -6,7 +6,7 @@ def export(library_id, api_key, db_path=None, library_type="user", batch_size=10
     p = open_papers2(db_path)
     z = zotero.Zotero(library_id, library_type, api_key)
     
-
+    
 
 
 def main():
