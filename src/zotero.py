@@ -1,6 +1,7 @@
+from datetime import datetime
 import logging as log
 from pyzotero.zotero import Zotero
-from .schema import PubType
+from .schema import PubType, IDSource
 
 # mapping of papers2 publication types 
 # to Zotero item types 
@@ -15,69 +16,118 @@ ITEM_TYPES = {
     PubType.CONFERENCE_PAPER    : 'conferencePaper'
 }
 
-# TODO: manuscript report thesis
-# TODO: colors, keywords, collections, notes, review/rating
+# TODO: item types: manuscript report thesis
+# TODO: papers2 entites: label, keywords, collections, annotations/notes, review/rating
+# TODO: key doesn't come back in template, but user may want to use Papers2 citekeys
+# TODO: user-definable date format; for now using YYYY-MM-DD
 
 library_id = 2082517
 api_key = 'wpWBK2BxZuCjim0ghD9aUEAd'
 
 EXTRACTORS = dict(
-    
+    DOI=                    Extract(lambda pub: pub.doi),
+    abstractNote=           Extract(lambda pub: pub.summary),
+    accessDate=             ExtractTimestamp(lambda pub: pub.imported_date),
+    # TODO: Give the user the option of replicating Papers2 collections in Zotero
+    # collections=          CollectionsExtract(),
+    creators=               ExtractAuthors(),
+    date=                   ExtractPubdate(lambda pub: pub.publication_date),
+    extra=                  ExtractPubMedID(),
+    issue=                  Extract(lambda pub: pub.number),
+    journalAbbreviation=    Extract(lambda pub: pub.abbreviation),
+    language=               Extract(lambda pub: pub.language),
+    pages=                  ExtractRange(lambda pub: (pub.startpage, pub.endpage)),
+    publicationTitle=       Extract(lambda pub: (pub.abbreviation, pub.bundle)),
+    rights=                 Extract(lambda pub: pub.copyright),
+    # TODO: extract tags
+    # tags=                 ExtractKeywords(),
+    title=                  Extract(lambda pub: pub.title),
+    # TODO: what to use this for?
+    # relations={}
+    url=                    ExtractUrl(),
+    volume=                 Extract(lambda pub: pub.volume)
 )
 
-class Extractor(object):
+class Extract(object):
+    def __init__(self, fn):
+        self.fn = fn
+    
+    def extract(self, pub, papers2):
+        value = self.fn(pub)
+        if isinstance(value, tuple):
+            value = filter(None, value)
+            return value[0] if len(value) > 0 else None
+        else:
+            return value
+
+class ExtractRange(Extract):
+    def extract(self, pub, papers2):
+        "{0}-{1}".format(*self.fn(pub))
+
+class ExtractTimestamp(Extract):
+    def extract(self, pub, papers2):
+        datetime.fromtimestamp(self.fn(pub))
+
+class ExtractPubdate(Extract):
+    def extract(self, pub, papers2):
+        def _parse_datenum(s, minval, maxval):
+            try:
+                i = int(s)
+                return None if (i < minval or i > maxval) else i
+            except:
+                None
+            
+        pub_date = self.fn(pub)
+        date_str = ''
+        
+        year = _parse_datenum(pub_date[year[2]:year[5]+1])
+        if year is not None:
+            date_str = year
+            
+            month = _parse_datenum(pub_date[month[6]:month[7]+1])
+            if month is not None:
+                date_str += "-" + month
+                
+                day = pub_date[month[8]:month[9]+1]
+                if date is not None:
+                    date_str += "-" + day
+        
+        return date_str
+
+class ExtractAuthors(object):
+    def extract(self, pub, papers2):
+        # TODO: need to handle other author types
+        def _parse_author(a):
+            if author.institutional > 0:
+                return { 
+                    u'creatorType': u'author',
+                    u'name': a.surname
+                }
+            else:
+                return { 
+                    u'creatorType': u'author',
+                    u'firstName': a.prename,
+                    u'lastName': a.surname
+                }
+        
+        return map(_parse_author, papers2.get_pub_authors(pub))
+
+class ExtractPubMedID(object):
+    def extract(self, pub, papers2):
+        pmids = papers2.get_identifiers(pub, IDSource.PUBMED)
+        return "PMID: {0}".format(pmids[0]) if len(pmids) > 0 else None
+
+class ExtractUrl(object):
+    def extract(self, pub, papers2):
+        urls = papers2.get_urls(pub, IDSource.USER)
+        return urls[0] if len(urls) > 0 else None
+            
+class AttrExtract(object):
     def __init__(self, key):
         self.key = key
     
-    def extract(self, pub, default=None):
-        raise NotImplementedError()
-
-def DefaultExtractor(Extractor):
-    def __init__(self, zotero_key, papers2_key):
-        Extractor.__init__(self, zotero_key)
-        self.paper2_key = papers2_key
-    
-    def extract(self, pub, default=None):
-        pass
-
-def extract_default(pub, key):
-    try:
-        return DefaultExtractor(key, key).extract(pub)
-    except:
-        return None
-
-p.__table__.columns.keys()
-
-{u'DOI': u'',
- u'ISSN': u'',
- u'abstractNote': u'',
- u'accessDate': u'',
- u'archive': u'',
- u'archiveLocation': u'',
- u'callNumber': u'',
- u'collections': [],
- u'creators': [{u'creatorType': u'author',
-                u'firstName': u'',
-                u'lastName': u''}],
- u'date': u'',
- u'extra': u'',
- u'issue': u'',
- u'itemType': u'journalArticle',
- u'journalAbbreviation': u'',
- u'language': u'',
- u'libraryCatalog': u'',
- u'pages': u'',
- u'publicationTitle': u'',
- u'relations': {},
- u'rights': u'',
- u'series': u'',
- u'seriesText': u'',
- u'seriesTitle': u'',
- u'shortTitle': u'',
- u'tags': [],
- u'title': u'',
- u'url': u'',
- u'volume': u''}
+    def extract(self, pub, papers2):
+        return getattr(pub, self.key)
 
 class ZoteroImporter(object):
     def __init__(self, library_id, library_type, api_key, papers2):
@@ -109,10 +159,8 @@ class ZoteroImporter(object):
         for key, value in template.iteritems():
             if key in EXTRACTORS:
                 value = EXTRACTORS[key].extract(pub, value)
-            else:
-                value = extract_default(pub, key)
-            if value is not None:
-                template[key] = value
+                if value is not None:
+                    template[key] = value
         
         # get paths to attachments
         attachments = papers2.get_attachments(pub)
