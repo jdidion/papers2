@@ -12,41 +12,9 @@ ITEM_TYPES = {
     PubType.SOFTWARE            : 'computerProgram',
     PubType.JOURNAL_ARTICLE     : 'journalArticle',
     PubType.NEWSPAPER_ARTICLE   : 'newspaperArticle',
-    PubType.WEBSITE_ARTICLE     : 'webpage'
+    PubType.WEBSITE_ARTICLE     : 'webpage',
     PubType.CONFERENCE_PAPER    : 'conferencePaper'
 }
-
-# TODO: item types: manuscript report thesis
-# TODO: papers2 entites: label, keywords, collections, annotations/notes, review/rating
-# TODO: key doesn't come back in template, but user may want to use Papers2 citekeys
-# TODO: user-definable date format; for now using YYYY-MM-DD
-
-library_id = 2082517
-api_key = 'wpWBK2BxZuCjim0ghD9aUEAd'
-
-EXTRACTORS = dict(
-    DOI=                    Extract(lambda pub: pub.doi),
-    abstractNote=           Extract(lambda pub: pub.summary),
-    accessDate=             ExtractTimestamp(lambda pub: pub.imported_date),
-    # TODO: Give the user the option of replicating Papers2 collections in Zotero
-    # collections=          CollectionsExtract(),
-    creators=               ExtractAuthors(),
-    date=                   ExtractPubdate(lambda pub: pub.publication_date),
-    extra=                  ExtractPubMedID(),
-    issue=                  Extract(lambda pub: pub.number),
-    journalAbbreviation=    Extract(lambda pub: pub.abbreviation),
-    language=               Extract(lambda pub: pub.language),
-    pages=                  ExtractRange(lambda pub: (pub.startpage, pub.endpage)),
-    publicationTitle=       Extract(lambda pub: (pub.abbreviation, pub.bundle)),
-    rights=                 Extract(lambda pub: pub.copyright),
-    # TODO: extract tags
-    # tags=                 ExtractKeywords(),
-    title=                  Extract(lambda pub: pub.title),
-    # TODO: what to use this for?
-    # relations={}
-    url=                    ExtractUrl(),
-    volume=                 Extract(lambda pub: pub.volume)
-)
 
 class Extract(object):
     def __init__(self, fn):
@@ -129,13 +97,42 @@ class AttrExtract(object):
     def extract(self, pub, papers2):
         return getattr(pub, self.key)
 
+# TODO: item types: manuscript report thesis
+# TODO: papers2 entites: label, keywords, collections, annotations/notes, review/rating
+# TODO: key doesn't come back in template, but user may want to use Papers2 citekeys
+# TODO: user-definable date format; for now using YYYY-MM-DD
+
+EXTRACTORS = dict(
+    DOI=                    Extract(lambda pub: pub.doi),
+    abstractNote=           Extract(lambda pub: pub.summary),
+    accessDate=             ExtractTimestamp(lambda pub: pub.imported_date),
+    # TODO: Give the user the option of replicating Papers2 collections in Zotero
+    # collections=          CollectionsExtract(),
+    creators=               ExtractAuthors(),
+    date=                   ExtractPubdate(lambda pub: pub.publication_date),
+    extra=                  ExtractPubMedID(),
+    issue=                  Extract(lambda pub: pub.number),
+    journalAbbreviation=    Extract(lambda pub: pub.abbreviation),
+    language=               Extract(lambda pub: pub.language),
+    pages=                  ExtractRange(lambda pub: (pub.startpage, pub.endpage)),
+    publicationTitle=       Extract(lambda pub: (pub.abbreviation, pub.bundle)),
+    rights=                 Extract(lambda pub: pub.copyright),
+    # TODO: extract tags
+    # tags=                 ExtractKeywords(),
+    title=                  Extract(lambda pub: pub.title),
+    # TODO: what to use this for?
+    # relations={}
+    url=                    ExtractUrl(),
+    volume=                 Extract(lambda pub: pub.volume)
+)
+
 class ZoteroImporter(object):
     def __init__(self, library_id, library_type, api_key, papers2):
-        self.client = Zotero(args.library_id, args.library_type, args.api_key)
+        self.client = Zotero(library_id, library_type, api_key)
         self.papers2 = papers2
         self._batch = None
     
-    def begin_session(self, batch_size, checkpoint):
+    def begin_session(self, batch_size=1, checkpoint=None):
         self._batch = {}
         self._batch_size = batch_size
         self._checkpoint = checkpoint
@@ -183,14 +180,14 @@ class ZoteroImporter(object):
         if batch_size >= (1 if force else self._batch_size):
             try:
                 # check that the items are valid
-                self.client.check_items(batch.keys())
+                #self.client.check_items(batch.keys())
                 # upload metadata
-                self.client.create_items(batch.keys())
+                #self.client.create_items(batch.keys())
                 # upload attachments
         
                 # update checkpoint
-                self._checkpoint.commit()
-        
+                #self._checkpoint.commit()
+                print batch.keys()
             except:
                 log.error("Error importing {0} items to Zotero".format(batch_size))
                 checkpoint.rollback()

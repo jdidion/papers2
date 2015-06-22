@@ -1,9 +1,10 @@
 from collections import namedtuple
 import os
 
+from sqlalchemy import create_engine
 from sqlalchemy.ext.automap import automap_base
 from sqlalchemy.orm import Session
-from sqlalchemy import create_engine
+from sqlalchemy.sql.expression import or_
 
 from .util import enum
 
@@ -60,17 +61,21 @@ class Papers2(object):
     
     # Get all publications matching specified criteria.
     def get_pubs(self, types=None, include_deleted=False, include_duplicates=False):
+        Publication = self.get_table("Publication")
         criteria = []
+        
         if types is not None:
             types = list(t.id for t in types)
-            criteria.append(Publication.subtype in types)
+            criteria.append(or_(Publication.subtype in types))
         if not include_deleted:
             criteria.append(Publication.marked_deleted is False)
-        if not include_duplicated:
+        if not include_duplicates:
             criteria.append(Publication.marked_duplicate is False)
         
-        Publication = self.get_table("Publication")
-        self.get_session().query(Publication).filter(*criteria)
+        q = self.get_session().query(Publication)
+        if len(criteria) > 0:
+            q.filter(*criteria)
+        return q
     
     # Get the PubType for a publication
     def get_pub_type(self, pub):

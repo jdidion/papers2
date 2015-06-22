@@ -1,0 +1,5 @@
+config.txt
+*.pyc
+papers2.egg-info/
+build/
+dist/
