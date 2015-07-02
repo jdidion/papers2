@@ -1,3 +1,9 @@
+# Wrapper around Papers2 database, using SQLAlchemy for ORM. 
+# Note that all these functions return unexecuted queries,
+# so they can either be iterated over, executed with a call
+# to a Query method, or implicitly executed by converting to
+# a list (list(query)).
+
 from collections import namedtuple
 import os
 
@@ -8,32 +14,21 @@ from sqlalchemy.sql.expression import or_
 
 from .util import enum
 
-DEFAULTS = {
-  'folder' : "~/Documents/Papers2",
-}
-
-StorageType = enum("StorageType",
-    ARTICLE     = "Articles"
-    BOOK        = "Books",
-    MANUSCRIPT  = "Manuscripts",
-    REPORT      = "reports"
-)
-
-PubAttrs = namedtuple("PubAttrs", ("name", "type", "id"))
+PubAttrs = namedtuple("PubAttrs", ("name", "id"))
 PubType = enum('PubType',
-    BOOK=               PubAttrs("Book",                StorageType.BOOK,       0),
-    #BOOK_SECTION=      PubAttrs("BookSection",         StorageType.BOOK,       ??),
-    THESIS=             PubAttrs("Thesis",              StorageType.BOOK        10),
-    E_BOOK=             PubAttrs("eBook",               StorageType.BOOK,       20),
-    WEBSITE=            PubAttrs("Website",             StorageType.LINK,       300),
-    SOFTWARE=           PubAttrs("Software",            StorageType.LINK,       341),
-    JOURNAL_ARTICLE=    PubAttrs("Journal Article",     StorageType.ARTICLE,    400),
-    NEWSPAPER_ARTICLE=  PubAttrs("Newspaper Article",   StorageType.LINK,       402),
-    WEBSITE_ARTICLE=    PubAttrs("Website Article",     StorageType.LINK,       403),
-    PREPRINT=           PubAttrs("Preprint",            StorageType.ARTICLE,    415),
-    CONFERENCE_PAPER=   PubAttrs("Conference Paper",    StorageType.ARTICLE,    420),
-    REPORT=             PubAttrs("Report",              StorageType.REPORT,     700),
-    PROTOCOL=           PubAttrs("Protocol",            StorageType.REPORT,     717)
+    BOOK=               PubAttrs("Book",                0),
+    #BOOK_SECTION=      PubAttrs("BookSection",         ??),
+    THESIS=             PubAttrs("Thesis",              10),
+    E_BOOK=             PubAttrs("eBook",               20),
+    WEBSITE=            PubAttrs("Website",             300),
+    SOFTWARE=           PubAttrs("Software",            341),
+    JOURNAL_ARTICLE=    PubAttrs("Journal Article",     400),
+    NEWSPAPER_ARTICLE=  PubAttrs("Newspaper Article",   402),
+    WEBSITE_ARTICLE=    PubAttrs("Website Article",     403),
+    PREPRINT=           PubAttrs("Preprint",            415),
+    CONFERENCE_PAPER=   PubAttrs("Conference Paper",    420),
+    REPORT=             PubAttrs("Report",              700),
+    PROTOCOL=           PubAttrs("Protocol",            717)
 )
 pub_type_id_to_pub_type = dict((t.id,t) for t in PubType.__values__)
 
@@ -62,11 +57,6 @@ Label = enum("Label",
     GRAY=       LabelAttrs("Gray",      7)
 )
 label_num_to_label = dict((l.num, l) for l in Label.__values__)
-
-def open_papers2(folder=None):
-    if folder is None:
-        folder = DEFAULTS['folder']
-    return Papers2(folder)
 
 # High-level iterface to the Papers2 database. Unless otherwise noted,
 # query methods return a Query object, which can either be iterated 
@@ -118,7 +108,7 @@ class Papers2(object):
         return pub_type_id_to_pub_type[pub.subtype]
     
     def get_label_name(self, pub):
-        return label_name_to_laabel[pub.label].name
+        return label_num_to_label[pub.label].name
     
     # Get authors for a publication, in order
     def get_pub_authors(self, pub):
@@ -153,21 +143,32 @@ class Papers2(object):
                 SyncEvent.remote_id.like("http%")
             ).order_by(SyncEvent.updated_at.desc())
     
-    # Get all attachments, with the primary attachment first
+    # Get all attachments, with the primary attachment first.
+    # Note that this does not return a query object, but
+    # instead an iterator over (path, mime_type) tuples.
     def get_attachments(self, pub):
         PDF = self.get_table("PDF")
         attachments = self.get_session().query(PDF
             ).filter(PDF.object_id == pub.ROWID
             ).order_by(PDF.is_primary.desc())
         # resolve relative path names
-        return list((os.path.join(self.folder, a.path), a.mime_type) for a in attachments)
+        return ((os.path.join(self.folder, a.path), a.mime_type) for a in attachments)
     
     def get_keywords(self, pub, kw_type):
         Keyword = self.get_table("Keyword")
         KeywordItem = self.get_table("KeywordItem")
-        keywords = self.get_session().query(Keyword
+        return self.get_session().query(Keyword
             ).join(KeywordItem, Keyword.ROWID == KeywordItem.keyword_id
             ).filter(KeywordItem.object_id == pub.ROWID)
+    
+    def get_collections(self, pub=None):
+        Collection = self.get_table("Collection")
+        q = self.get_session().query(Collection)
+        if pub is not None:
+            CollectionItem = self.get_table("CollectionItem")
+            q = q.join(CollectionItem, Collection.ROWID == CollectionItem.collection
+                ).filter(CollectionItem.object_id == pub.ROWID)
+        return q.filter(Collection.type.in_((0,5)))
     
     def get_reviews(self, pub, mine_only=True):
         Review = self.get_table("Review")

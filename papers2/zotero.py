@@ -1,3 +1,11 @@
+# Wrapper around a pyzotero session that can convert Papers2
+# entities to zotero items.
+#
+# TODO: item types: manuscript report thesis
+# TODO: handle archived papers?
+# TODO: user-definable date format; for now using YYYY-MM-DD
+# TODO: use relations to link book chapters to parent volume
+
 from datetime import datetime
 import logging as log
 import sys
@@ -157,9 +165,6 @@ class ExtractUrl(Extract):
         return value.remote_id
 
 class ExtractKeywords(Extract):
-    def __init__(self, key):
-        Extract.__init__(self, num_values=None)
-    
     def get_value(self, pub, context):
         keywords = []
         if 'user' in context.keyword_types:
@@ -167,9 +172,7 @@ class ExtractKeywords(Extract):
         if 'auto' in context.keyword_types:
             keywords.extend(context.papers2.get_keywords(pub, KeywordType.AUTO))
         if 'label' in context.keyword_types:
-            label = context.papers2.get_label_name(pub)
-            if context.label_prefix is not None:
-                label = "{0}{1}".format(context.label_preix, label)
+            label = context.label_map.get(context.papers2.get_label_name(pub), None)
             keywords.append(label)
         return keywords    
 
@@ -189,7 +192,14 @@ class ExtractNotes(Extract):
             notes.append(note)
         
         return notes
-    
+
+class ExtractCollections(Extract):
+    def get_value(self, pub, context):
+        if len(context.collections) > 0:
+            return filter(
+                lambda c: c.name in context.collections,
+                context.papers2.get_collections(pub))
+                
 class AttrExtract(Extract):
     def __init__(self, key):
         self.key = key
@@ -197,19 +207,12 @@ class AttrExtract(Extract):
     def get_value(self, pub, context):
         return getattr(pub, self.key)
 
-# TODO: collections
-# TODO: item types: manuscript report thesis
-# TODO: handle archived papers?
-# TODO: user-definable date format; for now using YYYY-MM-DD
-# TODO: use relations to link book chapters to parent volume
-
 EXTRACTORS = dict(
     DOI=                    Extract(lambda pub: pub.doi),
     ISBN=                   ExtractIdentifier((IDSource.ISBN, IDSource.ISSN)),
     abstractNote=           Extract(lambda pub: pub.summary),
     accessDate=             ExtractTimestamp(lambda pub: pub.imported_date),
-    # TODO: Give the user the option of replicating Papers2 collections in Zotero
-    # collections=          CollectionsExtract(),
+    collections=            ExtractCollections(),
     creators=               ExtractCreators(),
     date=                   ExtractPubdate(lambda pub: pub.publication_date),
     edition=                Extract(lambda pub: pub.version),
@@ -231,58 +234,80 @@ EXTRACTORS = dict(
     volume=                 Extract(lambda pub: pub.volume)
 )
 
+class Batch(object):
+    def __init__(self, batch_size):
+        self.items = []
+        self.attachments = []
+        self.size = batch_size
+    
+    @property
+    def is_full(self):
+        return len(self.items) >= self.size
+    
+    @property
+    def is_empty(self):
+        return len(self.items) == 0
+    
+    def add(self, item, attachments):
+        self.items.append(item)
+        self.attachments.append(attachments)
+    
+    def iter(self):
+        for item in zip(self.items, self.attachments):
+            yield item
+    
+    def clear(self):
+        self.items = []
+        self.attachments = []
+
 class ZoteroImporter(object):
     def __init__(self, library_id, library_type, api_key, papers2,
-            keyword_types=('user','label'), label_prefix="Label",
-            add_to_collections=[], dryrun=False):
+            keyword_types=('user','label'), label_map={}, add_to_collections=[], 
+            batch_size=50, checkpoint=None, dryrun=False):
         self.client = Zotero(library_id, library_type, api_key)
         self.papers2 = papers2
         self.keyword_types = keyword_types
-        self.label_prefix = label_prefix
-        self.add_to_collections = add_to_collections
-        self.dryrun = False
-        self._batch = None
-    
-    def begin_session(self, batch_size=50, checkpoint=None):
-        self._batch_items = []
-        self._batch_attachments = []
-        self._batch_collections = []
-        self._batch_size = batch_size
+        self.label_map = label_map
+        self.dryrun = dryrun
+        self._batch = Batch(batch_size)
         self._checkpoint = checkpoint
-        self._collections = None
+        self._load_collections(add_to_collections)
     
+    # Load Zotero collections and create any
+    # Papers2 collections that don't exist.
     # TODO: need to handle collection hierarchies
-    def _load_collections(self):
-        if self._collections is None:
-            self._collections = {}
-            if self.add_to_collections is None:
-                self.add_to_collections = self.papers2.get_collections()
+    def _load_collections(self, add_to_collections):
+        self.collections = {}
+        if add_to_collections is None:
+            add_to_collections = list(c.name for c in self.papers2.get_collections())
 
-            if len(self.add_to_collections) > 0:
+        if len(add_to_collections) > 0:
+            if self.dryrun:
+                for c in add_to_collections:
+                    self.collections[c] = "<key>"
+                
+            else:
                 # fetch existing zotero collections
                 existing_collections = {}
                 for zc in self.client.collections():
                     data = zc['data']
                     existing_collections[data['name']] = data['key']
-                
+            
                 # add any papers2 collections that do not already exist
                 payload = []
-                for pc in self.add_to_collections:
-                    if pc.name not in zc:
-                        payload.append(dict(name=pc.name))
+                for pc in add_to_collections:
+                    if pc not in zc:
+                        payload.append(dict(name=pc))
                 if len(payload) > 0:
                     self.client.create_collection(payload)
-                
+            
                 # re-fetch zotero collections in order to get keys
                 for zc in self.client.collections():
                     data = zc['data']
-                    if data['name'] in self.add_to_collections:
-                        self._collections[data['name']] = data['key']
+                    if data['name'] in add_to_collections:
+                        self.collections[data['name']] = data['key']
     
     def add_pub(self, pub):
-        # make sure we're in a session
-        assert self._batch is not None, "add_pub was called before begin_session"
-        
         # ignore publications we've already imported
         if self._checkpoint.contains(pub.ROWID):
             log.debug("Skipping already imported publication {0}".format(pub.ROWID))
@@ -301,54 +326,37 @@ class ZoteroImporter(object):
                 if value is not None:
                     item[key] = value
         
-        # get paths to attachments
-        attachments = self.papers2.get_attachments(pub)
-        
-        # add to batch
-        self._batch_items.append(template)
-        self._batch_attachments.append(attachments)
-        
-        if len(self._collections) > 0:
-            pub_collections = filter(
-                lambda c: c.name in self._collections,
-                self.papers2.get_pub_collections(pub))
-            self._batch_collections.append(pub_collections)
+        # get paths to attachments and add to batch
+        self._batch.add(item, list(self.papers2.get_attachments(pub)))
         
         # commit the batch if it's full
         self._commit_batch()
-        sys.exit()
     
-    def end_session(self):
-        self._commit_batch(force=True)
-        self._batch_items = None
-        self._batch_attachments = None
-        self._batch_collections = None
-        self._batch_size = None
-        self._checkpont = None
-        self._collections = None
-        
+    def close(self):
+        if self._batch is not None:
+            self._commit_batch(force=True)
+            self._batch = None
+            
     def _commit_batch(self, force=False):
-        batch_size = len(self._batch_items)
-        if batch_size >= (1 if force else self._batch_size):
+        if self._batch.is_full or (force and not self._batch.is_empty):
             try:
-                # check that the items are valid
-                self.client.check_items(self._batch_items)
-                
                 if self.dryrun:
-                    for item, attachments, collections in zip(
-                            self._batch_items, self.batch_attachments, self._batch_collections):
-                        print "{0} : {1} : {2}\n".format(str(item), str(attachments), str(collections))
+                    for item, attachments in self._batch.iter():
+                        print "{0} : {1}\n".format(str(item), str(attachments))
                 
                 else:
+                    # check that the items are valid
+                    self.client.check_items(self._batch.items)
+                    
                     # upload metadata
-                    status = self.client.create_items(self._batch_items)
+                    status = self.client.create_items(self._batch.items)
                 
                     if len(status['failed'] > 0):
                         for k,v in status['failed'].iteritems():
                             idx = int(k)
                             # remove failures from the checkpoint
-                            self.checkpoint.remove(idx)
-                            item = self._batch_items[idx]
+                            self._checkpoint.remove(idx)
+                            item = self._batch.items[idx]
                             log.error("Upload failed for item {0}; code {1}; {2}".format(
                                 item['title'], v['code'], v['message']))
                 
@@ -356,26 +364,18 @@ class ZoteroImporter(object):
                     successes.update(stats['success'])
                     successes.update(status['unchanged'])
                 
-                    # upload attachments
-                    for k,objKey in successes.iteritems():
+                    # upload attachments and add items to collections
+                    for k, objKey in successes.iteritems():
                         idx = int(k)
-                        attachments = self._batch_attachments[idx]
-                        self.client.attachment_simple(attachments, objKey)
-
-                        collections = self._batch_collections[idx]
-                        if collections is not None and len(collections) > 0:
-                            for c in collections:
-                                self.client.addto_collection(c, )
+                        self.client.attachment_simple(self._batch.attachments[idx], objKey)
                 
                     # update checkpoint
                     self._checkpoint.commit()
             
             except:
-                log.error("Error importing {0} items to Zotero".format(batch_size))
-                checkpoint.rollback()
+                log.error("Error importing {0} items to Zotero".format(self._batch.size))
+                self._checkpoint.rollback()
                 raise
             
             finally:
-                self._batch_items = []
-                self._batch_attachments = []
-                self._batch_collections = []
+                self._batch.clear()

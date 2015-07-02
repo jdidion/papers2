@@ -1,6 +1,8 @@
 import os
 import pickle
 
+# Simple checkpointing facility that maintains a
+# set of items IDs and pickles them on commit.
 class Checkpoint(object):
     def __init__(self, filename):
         self.filename = filename
@@ -24,6 +26,7 @@ class Checkpoint(object):
     def contains(self, db_id):
         return db_id in self.ids
 
+# Create an enumerated type
 def enum(name, **enums):
     _enums = enums.copy()
     _enums["__names__"] = list(n for n in enums.keys())
