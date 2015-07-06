@@ -69,6 +69,9 @@ class Papers2(object):
         self.schema = automap_base()
         self.schema.prepare(self.engine, reflect=True)
         self._session = None
+        self._cache = dict(
+            bundle={}
+        )
     
     def close(self):
         if self._session is not None:
@@ -83,7 +86,7 @@ class Papers2(object):
         return self.schema.classes.get(name)
     
     # Get all publications matching specified criteria.
-    def get_pubs(self, types=None, include_deleted=False, include_duplicates=False):
+    def get_publications(self, types=None, include_deleted=False, include_duplicates=False):
         Publication = self.get_table("Publication")
         criteria = []
         
@@ -103,6 +106,24 @@ class Papers2(object):
             q = q.filter(*criteria)
         return q
     
+    # Get a single publication by ID. Query is executed and
+    # single result is returned.
+    def get_publication(self, pub_id):
+        Publication = self.get_table("Publication")
+        return self.get_session().query(Publication
+            ).filter(Publication.ROWID == pub_id
+            ).one()
+    
+    def get_bundle(self, pub):
+        try:
+            bundle_id = int(pub.bundle)
+        except:
+            return None
+        if pub.bundle not in self._cache['bundle']:
+            bundle = self.get_publication(bundle_id)
+            self._cache['bundle'][pub.bundle] = bundle
+        return self._cache['bundle'][pub.bundle]
+        
     # Get the PubType for a publication
     def get_pub_type(self, pub):
         return pub_type_id_to_pub_type[pub.subtype]
@@ -154,12 +175,15 @@ class Papers2(object):
         # resolve relative path names
         return ((os.path.join(self.folder, a.path), a.mime_type) for a in attachments)
     
-    def get_keywords(self, pub, kw_type):
+    def get_keywords(self, pub, kw_type=None):
         Keyword = self.get_table("Keyword")
         KeywordItem = self.get_table("KeywordItem")
-        return self.get_session().query(Keyword
+        q = self.get_session().query(Keyword
             ).join(KeywordItem, Keyword.ROWID == KeywordItem.keyword_id
             ).filter(KeywordItem.object_id == pub.ROWID)
+        if kw_type is not None:
+            q = q.filter(KeywordItem.type == kw_type)
+        return q
     
     def get_collections(self, pub=None):
         Collection = self.get_table("Collection")

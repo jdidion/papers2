@@ -64,7 +64,7 @@ def main():
     
     label_map = {}
     if args.label_map is not None:
-        label_map = dict((k,v) for s in args.label_map.split(",") for k,v in s.split("="))
+        label_map = dict(s.split('=') for s in args.label_map.split(","))
     for label in Label.__values__:
         if label.name not in label_map:
             label_map[label.name] = "{0}{1}".format(args.label_tags_prefix, label.name)
@@ -79,7 +79,7 @@ def main():
     
     try:
         # TODO: add options for filtering pubs to import
-        for pub in p.get_pubs():
+        for pub in p.get_publications():
             try:
                 z.add_pub(pub)
 

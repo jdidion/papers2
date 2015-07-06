@@ -55,13 +55,14 @@ class Extract(object):
                 try:
                     value = tuple(value)
                     nvals = len(value)
+                    return_tuple = self.num_values != 1
                     if self.num_values is not None:
                         nvals = min(nvals, self.num_values)
                     value = self.format_tuple(value, nvals)
                     if value is not None:
                         if len(value) == 0:
                             value = None
-                        elif nvals == 1:
+                        elif nvals == 1 and not return_tuple:
                             value = value[0]
                 
                 except TypeError:
@@ -91,6 +92,12 @@ class ExtractTimestamp(Extract):
     def format(self, value):
         datetime.fromtimestamp(value)
 
+class ExtractPubTitle(Extract):
+    def get_value(self, pub, context):
+        journal = context.papers2.get_bundle(pub)
+        if journal is not None:
+            return journal.title
+
 class ExtractPubdate(Extract):
     def format(self, pub_date):
         date_str = ''
@@ -101,11 +108,17 @@ class ExtractPubdate(Extract):
             
             month = pub_date[6:8]
             if month is not None:
+                if month == "00":
+                    month = "01"
                 date_str += "-" + month
                 
                 day = pub_date[8:10]
                 if day is not None:
+                    if day == "00":
+                        day = "01"
                     date_str += "-" + day
+        
+        # TODO: check date for validity
         
         return date_str
 
@@ -165,15 +178,19 @@ class ExtractUrl(Extract):
         return value.remote_id
 
 class ExtractKeywords(Extract):
+    def __init__(self):
+        Extract.__init__(self, num_values=None)
+        
     def get_value(self, pub, context):
         keywords = []
         if 'user' in context.keyword_types:
-            keywords.extend(context.papers2.get_keywords(pub, KeywordType.USER))
+            keywords.extend(k.name for k in context.papers2.get_keywords(pub, KeywordType.USER))
         if 'auto' in context.keyword_types:
-            keywords.extend(context.papers2.get_keywords(pub, KeywordType.AUTO))
+            keywords.extend(k.name for k in context.papers2.get_keywords(pub, KeywordType.AUTO))
         if 'label' in context.keyword_types:
             label = context.label_map.get(context.papers2.get_label_name(pub), None)
-            keywords.append(label)
+            if label is not None:
+                keywords.append(label)
         return keywords    
 
 class ExtractNotes(Extract):
@@ -194,11 +211,15 @@ class ExtractNotes(Extract):
         return notes
 
 class ExtractCollections(Extract):
+    def __init__(self):
+        Extract.__init__(self, num_values=None)
+    
     def get_value(self, pub, context):
         if len(context.collections) > 0:
+            pub_collections = (c.name for c in context.papers2.get_collections(pub))
             return filter(
-                lambda c: c.name in context.collections,
-                context.papers2.get_collections(pub))
+                lambda name: name in context.collections,
+                pub_collections)
                 
 class AttrExtract(Extract):
     def __init__(self, key):
@@ -218,14 +239,14 @@ EXTRACTORS = dict(
     edition=                Extract(lambda pub: pub.version),
     extra=                  ExtractPubmedID(),
     issue=                  Extract(lambda pub: pub.number),
-    journalAbbreviation=    Extract(lambda pub: pub.abbreviation),
+    journalAbbreviation=    Extract(lambda pub: pub.bundle_string),
     language=               Extract(lambda pub: pub.language),
     notes=                  ExtractNotes(),
     number=                 Extract(lambda pub: pub.document_number),
     pages=                  ExtractRange(lambda pub: (pub.startpage, pub.endpage)),
     numPages=               Extract(lambda pub: pub.startpage),
     place=                  Extract(lambda pub: pub.place),
-    publicationTitle=       Extract(lambda pub: (pub.abbreviation, pub.bundle)),
+    publicationTitle=       ExtractPubTitle(),
     publisher=              Extract(lambda pub: pub.publisher),
     rights=                 Extract(lambda pub: pub.copyright),
     tags=                   ExtractKeywords(),
