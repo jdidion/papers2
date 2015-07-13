@@ -3,3 +3,5 @@ config.txt
 papers2.egg-info/
 build/
 dist/
+library.json
+papers2zotero.pickle

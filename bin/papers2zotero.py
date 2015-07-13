@@ -39,6 +39,8 @@ def main():
         help="Comma-delimited list of label=name pairs for converting labels (colors) to keywords")
     parser.add_argument("-L", "--label-tags-prefix", default="Label",
         help="For items with a label (i.e. color), add a tag of the form '<prefix><color>'")
+    parser.add_argument("-r", "--rowids", default=None,
+        help="Comma-delimited list of database IDs of publications to process.")
     parser.add_argument("-t", "--library-type", default="user", choices=("user","group"),
         help="Zotero library type (user or group)")
     parser.add_argument("--batch-size", type=int, default=50, 
@@ -46,15 +48,20 @@ def main():
     parser.add_argument("--checkpoint-file", default="papers2zotero.pickle",
         help="File where list of Papers2 database IDs for successfully uploaded items "\
              "will be stored so that the program can be stopped and resumed.")
-    parser.add_argument("--dryrun", action="store_true", default=False,
+    parser.add_argument("--dryrun", nargs="?", const="stdout", default=None,
         help="Just print out the item JSON that will be sent to Zotero, " \
-             "rather than actually sending it.")
+             "rather than actually sending it. If a file name is specified, the JSON will be "\
+             "written to the file rather than stdout.")
+    parser.add_argument("--no-attachments", action="store_true", default=False,
+        help="Do not upload PDFs and other attachments")
     parser.add_argument("--no-collections", action="store_true", default=False,
         help="Do not convert Papers2 collections into Zotero collections")
     args = parser.parse_args(args=remaining)
-    
+
     # create checkpoint for tracking uploaded items
-    checkpoint = Checkpoint(args.checkpoint_file) if args.checkpoint_file is not None else None
+    checkpoint = None
+    if args.dryrun is None and args.checkpoint_file is not None:
+        checkpoint = Checkpoint(args.checkpoint_file)
     
     keyword_types = args.keyword_types.split(",")
     
@@ -63,8 +70,9 @@ def main():
         add_to_collections = args.include_collections.split(",")
     
     label_map = {}
+    label_map[Label.NONE.name] = None
     if args.label_map is not None:
-        label_map = dict(s.split('=') for s in args.label_map.split(","))
+        label_map.update(dict(s.split('=') for s in args.label_map.split(",")))
     for label in Label.__values__:
         if label.name not in label_map:
             label_map[label.name] = "{0}{1}".format(args.label_tags_prefix, label.name)
@@ -74,12 +82,16 @@ def main():
     
     # initialize Zotero client
     z = ZoteroImporter(args.library_id, args.library_type, args.api_key, p, 
-        keyword_types, label_map, add_to_collections,
+        keyword_types, label_map, add_to_collections, not args.no_attachments,
         args.batch_size, checkpoint, dryrun=args.dryrun)
     
     try:
-        # TODO: add options for filtering pubs to import
-        for pub in p.get_publications():
+        # TODO: add additional options for filtering pubs to import
+        query_args = {}
+        if args.rowids is not None:
+            query_args['row_ids'] = map(int, args.rowids.split(","))
+        
+        for pub in p.get_publications(**query_args):
             try:
                 z.add_pub(pub)
 
