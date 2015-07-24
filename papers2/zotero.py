@@ -263,12 +263,12 @@ EXTRACTORS = dict(
 class ZoteroImporter(object):
     def __init__(self, library_id, library_type, api_key, papers2,
             keyword_types=('user','label'), label_map={}, add_to_collections=[], 
-            upload_attachments=True, batch_size=50, checkpoint=None, dryrun=None):
+            upload_attachments="all", batch_size=50, checkpoint=None, dryrun=None):
         self.client = Zotero(library_id, library_type, api_key)
         self.papers2 = papers2
         self.keyword_types = keyword_types
         self.label_map = label_map
-        self.upload_attachments = upload-attachments
+        self.upload_attachments = upload_attachments
         self.checkpoint = checkpoint
         self.dryrun = JSONWriter(dryrun) if dryrun is not None else None
         self._batch = Batch(batch_size)
@@ -329,7 +329,8 @@ class ZoteroImporter(object):
         
         # get paths to attachments
         attachments = []
-        if self.upload_attachments:
+        if self.upload_attachments == "all" or (
+                self.upload_attachments == "unread" and pub.times_read == 0):
             attachments = list(self.papers2.get_attachments(pub))
         
         # add to batch and checkpoint
@@ -339,6 +340,8 @@ class ZoteroImporter(object):
         
         # commit the batch if it's full
         self._commit_batch()
+        
+        return True
     
     def close(self):
         if self._batch is not None:
@@ -373,15 +376,20 @@ class ZoteroImporter(object):
                     successes.update(status['unchanged'])
                 
                     # upload attachments and add items to collections
-                    if self.upload_attachments:
+                    if self.upload_attachments != "none":
                         for k, objKey in successes.iteritems():
                             # TODO: modify pyzotero to pass MIME type for contentType key
                             attachments = list(path for path, mime in self._batch.attachments[int(k)])
-                            self.client.attachment_simple(attachments, objKey)
+                            if len(attachments) > 0:
+                                self.client.attachment_simple(attachments, objKey)
                 
                     # update checkpoint
                     if self.checkpoint is not None:
                         self.checkpoint.commit()
+                
+                log.info("Batch committed: {0} items created and {1} items unchanged out of {2} attempted".format(
+                    len(status['success']), len(status['unchanged']), self._batch.size
+                ))
             
             except:
                 log.error("Error importing {0} items to Zotero".format(self._batch.size))

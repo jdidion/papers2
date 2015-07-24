@@ -12,12 +12,18 @@ from papers2.zotero import ZoteroImporter
 from papers2.util import Checkpoint
 
 def main():
-    #log.basicConfig()
-    #log.getLogger('sqlalchemy.engine').setLevel(log.INFO)
-    
     pre_parser = ArgumentParser()
     pre_parser.add_argument("-c", "--config", default=None, help="Configuration file")
+    pre_parser.add_argument("--log-level", metavar="LEVEL", default="WARNING",
+        choices=log._levelNames.keys(), help="Logger level")
+    pre_parser.add_argument("--sql-log-level", metavar="LEVEL", default="WARNING",
+        choices=log._levelNames.keys(), help="Logger level for SQL statements")
+    pre_parser.add_argument("--http-log-level", metavar="LEVEL", default="WARNING",
+        choices=log._levelNames.keys(), help="Logger level for HTTP requests")
     args, remaining = pre_parser.parse_known_args()
+    log.basicConfig(level=log._levelNames[args.log_level])
+    log.getLogger('sqlalchemy.engine').setLevel(log._levelNames[args.sql_log_level])
+    log.getLogger('requests').setLevel(log._levelNames[args.http_log_level])
     
     parser = ArgumentParser()
     if args.config is not None:
@@ -52,8 +58,10 @@ def main():
         help="Just print out the item JSON that will be sent to Zotero, " \
              "rather than actually sending it. If a file name is specified, the JSON will be "\
              "written to the file rather than stdout.")
-    parser.add_argument("--no-attachments", action="store_true", default=False,
-        help="Do not upload PDFs and other attachments")
+    parser.add_argument("--max-pubs", type=int, default=None,
+        help="Max number of publications to upload.")
+    parser.add_argument("--attachments", choices=("all", "unread", "none"), default="all",
+        help="Which attachments to upload")
     parser.add_argument("--no-collections", action="store_true", default=False,
         help="Do not convert Papers2 collections into Zotero collections")
     args = parser.parse_args(args=remaining)
@@ -82,25 +90,43 @@ def main():
     
     # initialize Zotero client
     z = ZoteroImporter(args.library_id, args.library_type, args.api_key, p, 
-        keyword_types, label_map, add_to_collections, not args.no_attachments,
+        keyword_types, label_map, add_to_collections, args.attachments,
         args.batch_size, checkpoint, dryrun=args.dryrun)
     
-    try:
-        # TODO: add additional options for filtering pubs to import
-        query_args = {}
-        if args.rowids is not None:
-            query_args['row_ids'] = map(int, args.rowids.split(","))
-        
-        for pub in p.get_publications(**query_args):
-            try:
-                z.add_pub(pub)
-
-            except Exception as e:
-                log.error("Error converting publication {0} to Zotero".format(pub.ROWID), exc_info=e)
+    # Limit the number of publications to process
+    # TODO: add additional options for filtering pubs to import
+    query_args = {}
+    max_pubs = args.max_pubs
+    row_ids = None
+    if args.rowids is not None:
+        query_args['row_ids'] = map(int, args.rowids.split(","))
+        if max_pubs is None or max_pubs > len(query_args['row_ids']):
+            max_pubs = len(row_ids)
     
-    finally:
-        p.close()
-        z.close()
+    # Prepare query
+    q = p.get_publications(**query_args)
+    
+    if max_pubs is None:
+        max_pubs = q.count()
+    
+    num_added = 0
+    
+    for pub in q:
+        try:
+            if z.add_pub(pub):
+                log.debug(u"Added to batch: {0}".format(pub.title))
+                num_added += 1
+            
+            if max_pubs is not None and num_added >= max_pubs:
+                break
+
+        except Exception as e:
+            log.error("Error converting publication {0} to Zotero".format(pub.ROWID), exc_info=e)
+
+    p.close()
+    z.close()
+
+    log.info("Exported {0} papers to Zotero".format(num_added))
 
 if __name__ == "__main__":
     main()
