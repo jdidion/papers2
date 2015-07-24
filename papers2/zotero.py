@@ -381,7 +381,13 @@ class ZoteroImporter(object):
                             # TODO: modify pyzotero to pass MIME type for contentType key
                             attachments = list(path for path, mime in self._batch.attachments[int(k)])
                             if len(attachments) > 0:
-                                self.client.attachment_simple(attachments, objKey)
+                                try:
+                                    self.client.attachment_simple(attachments, objKey)
+
+                                # This is to work around a bug in pyzotero where an exception is
+                                # thrown if an attachment already exists
+                                except KeyError:
+                                    log.info("One or more attachment already exists: {0}".format(",".join(attachments)))
                 
                     # update checkpoint
                     if self.checkpoint is not None:
