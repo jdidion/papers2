@@ -45,5 +45,10 @@ setup(
 
     packages=find_packages(exclude=['scripts']),
     
-    scripts=find_scripts('bin/')
+    scripts=find_scripts('bin/'),
+    
+    install_requires=[
+        'pyzotero',
+        'sqlalchemy'
+    ]
 )

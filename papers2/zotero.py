@@ -393,9 +393,9 @@ class ZoteroImporter(object):
                     if self.checkpoint is not None:
                         self.checkpoint.commit()
                 
-                log.info("Batch committed: {0} items created and {1} items unchanged out of {2} attempted".format(
-                    len(status['success']), len(status['unchanged']), self._batch.size
-                ))
+                    log.info("Batch committed: {0} items created and {1} items unchanged out of {2} attempted".format(
+                        len(status['success']), len(status['unchanged']), self._batch.size
+                    ))
             
             except:
                 log.error("Error importing {0} items to Zotero".format(self._batch.size))

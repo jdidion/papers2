@@ -1,43 +1,19 @@
 #!/usr/bin/env python
 # Export publications from a Papers2 database to
 # a Zotero account.
-
 from argparse import ArgumentParser
-from ConfigParser import SafeConfigParser as ConfigParser
 import logging as log
 import sys
 
 from papers2.schema import Papers2, Label
 from papers2.zotero import ZoteroImporter
-from papers2.util import Checkpoint
+from papers2.util import Checkpoint, parse_with_config
 
-def main():
-    pre_parser = ArgumentParser()
-    pre_parser.add_argument("-c", "--config", default=None, help="Configuration file")
-    pre_parser.add_argument("--log-level", metavar="LEVEL", default="WARNING",
-        choices=log._levelNames.keys(), help="Logger level")
-    pre_parser.add_argument("--sql-log-level", metavar="LEVEL", default="WARNING",
-        choices=log._levelNames.keys(), help="Logger level for SQL statements")
-    pre_parser.add_argument("--http-log-level", metavar="LEVEL", default="WARNING",
-        choices=log._levelNames.keys(), help="Logger level for HTTP requests")
-    args, remaining = pre_parser.parse_known_args()
-    log.basicConfig(level=log._levelNames[args.log_level])
-    log.getLogger('sqlalchemy.engine').setLevel(log._levelNames[args.sql_log_level])
-    log.getLogger('requests').setLevel(log._levelNames[args.http_log_level])
-    
-    parser = ArgumentParser()
-    if args.config is not None:
-        config = ConfigParser()
-        config.read(args.config)
-        defaults = {}
-        for section in ('Papers2', 'Zotero'):
-            defaults.update(config.items(section))
-        parser.set_defaults(**defaults)
-
+def add_arguments(parser):
     parser.add_argument("-a", "--api-key", help="Zotero API key")
-    parser.add_argument("-c", "--include-collections", default=None, 
+    parser.add_argument("-C", "--include-collections", default=None, 
         help="Comma-delimited list of collections to convert into Zotero collections")
-    parser.add_argument("-f", "--papers2-folder", help="Path to Papers2 folder")
+    parser.add_argument("-f", "--papers2-folder", default="~/Papers2", help="Path to Papers2 folder")
     parser.add_argument("-i", "--library-id", help="Zotero library ID")
     parser.add_argument("-k", "--keyword-types", default="user,label",
         help="Comma-delimited list of keyword types to convert into tags ('user','auto','label')")
@@ -64,7 +40,19 @@ def main():
         help="Which attachments to upload")
     parser.add_argument("--no-collections", action="store_true", default=False,
         help="Do not convert Papers2 collections into Zotero collections")
-    args = parser.parse_args(args=remaining)
+    parser.add_argument("--log-level", metavar="LEVEL", default="WARNING",
+        choices=log._levelNames.keys(), help="Logger level")
+    parser.add_argument("--sql-log-level", metavar="LEVEL", default="WARNING",
+        choices=log._levelNames.keys(), help="Logger level for SQL statements")
+    parser.add_argument("--http-log-level", metavar="LEVEL", default="WARNING",
+        choices=log._levelNames.keys(), help="Logger level for HTTP requests")
+
+def main():
+    args = parse_with_config(add_arguments, ('Papers2', 'Zotero'))
+
+    log.basicConfig(level=log._levelNames[args.log_level])
+    log.getLogger('sqlalchemy.engine').setLevel(log._levelNames[args.sql_log_level])
+    log.getLogger('requests').setLevel(log._levelNames[args.http_log_level])
 
     # create checkpoint for tracking uploaded items
     checkpoint = None

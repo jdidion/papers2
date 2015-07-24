@@ -62,8 +62,9 @@ label_num_to_label = dict((l.num, l) for l in Label.__values__)
 # query methods return a Query object, which can either be iterated 
 # over or all rows can be fetched by calling the .all() method.
 class Papers2(object):
-    def __init__(self, folder):
-        db = os.path.join(folder, "Library.papers2", "Database.papersdb")
+    def __init__(self, folder="~/Papers2"):
+        db = os.path.abspath(os.path.expanduser(os.path.join(
+            folder, "Library.papers2", "Database.papersdb")))
         self.engine = create_engine("sqlite:///{0}".format(os.path.abspath(db)))
         self.folder = folder
         self.schema = automap_base()
