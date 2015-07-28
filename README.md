@@ -5,7 +5,7 @@ This library provides a high-level interface to the Papers2 database, along with
 # Installation
 
 ```python
-pip install git+git://github.com/jdidion/papers2.git@v2
+pip install git+git://github.com/jdidion/papers2.git@v3
 ```
 
 This will install the dependencies:
@@ -26,14 +26,14 @@ from papers2.schema import Papers2
 db = Papers2() # opens database at default location
 ```
 
-To simply iterate through all the publications in the database:
+To iterate through all the publications in the database:
 
 ```python
 for pub in db.get_publications():
     print pub.title
 ```
 
-The API simply uses SqlAlchemy auto-mappings to generate objects from database tables, so you can view the full list of available fields either by viewing `.schema` in the SQLite3 console, or by running python in an interactive session and printing the object dictionary:
+The API uses SqlAlchemy auto-mappings to generate objects from database tables, so you can view the full list of available fields either by viewing `.schema` in the SQLite3 console, or by running python in an interactive session and printing the object dictionary:
 
 ```python
 print dir(pub)
@@ -43,7 +43,9 @@ Better documentation for the API is forthcomming.
 
 ## Command Line
 
-To simply export your library, use the executable scripts provided for each destination format. Currently, only Zotero is supported.
+To simply export your library, use the executable scripts provided for each destination format. Currently, only Zotero is supported as a destination.
+
+### Export to Zotero
 
 You'll need three things to get started:
 
