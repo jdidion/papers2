@@ -5,7 +5,7 @@ This library provides a high-level interface to the Papers2 database, along with
 # Installation
 
 ```python
-pip install git+git://github.com/jdidion/papers2.git@v3
+pip install git+git://github.com/jdidion/papers2.git
 ```
 
 This will install the dependencies:

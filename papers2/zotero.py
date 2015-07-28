@@ -194,24 +194,7 @@ class ExtractKeywords(Extract):
             label = context.label_map.get(context.papers2.get_label_name(pub), None)
             if label is not None:
                 keywords.append(label)
-        return keywords    
-
-class ExtractNotes(Extract):
-    def get_value(self, pub, context):
-        notes = []
-        
-        if pub.note is not None and len(pub.note) > 0:
-            note = context.client.item_template('note')
-            note['note'] = pub.note
-            notes.append(note)
-        
-        reviews = context.papers2.get_reviews(pub)
-        for r in reviews:
-            note = context.client.item_template('note')
-            note['note'] = "{0} Rating: {1}".format(r.content, r.rating)
-            notes.append(note)
-        
-        return notes
+        return keywords
 
 class ExtractCollections(Extract):
     def __init__(self):
@@ -245,7 +228,6 @@ EXTRACTORS = dict(
     issue=                  Extract(lambda pub: pub.number),
     journalAbbreviation=    Extract(lambda pub: pub.bundle_string),
     language=               Extract(lambda pub: pub.language),
-    notes=                  ExtractNotes(),
     number=                 Extract(lambda pub: pub.document_number),
     pages=                  ExtractRange(lambda pub: (pub.startpage, pub.endpage)),
     numPages=               Extract(lambda pub: pub.startpage),
@@ -326,6 +308,15 @@ class ZoteroImporter(object):
                 value = EXTRACTORS[key].extract(pub, self, value)
                 if value is not None:
                     item[key] = value
+
+        # add notes, if any
+        notes = []
+        if pub.notes is not None and len(pub.notes) > 0:
+            notes.append(pub.notes)
+        
+        reviews = self.papers2.get_reviews(pub)
+        for r in reviews:
+            notes.append("{0} Rating: {1}".format(r.content, r.rating))
         
         # get paths to attachments
         attachments = []
@@ -334,7 +325,7 @@ class ZoteroImporter(object):
             attachments = list(self.papers2.get_attachments(pub))
         
         # add to batch and checkpoint
-        self._batch.add(item, attachments)
+        self._batch.add(item, notes, attachments)
         if self.checkpoint is not None:
             self.checkpoint.add(pub.ROWID)
         
@@ -362,24 +353,48 @@ class ZoteroImporter(object):
                     status = self.client.create_items(self._batch.items)
                     
                     if len(status['failed']) > 0:
-                        for k,v in status['failed'].iteritems():
-                            idx = int(k)
+                        for status_idx, status_msg in status['failed'].iteritems():
+                            item_idx = int(status_idx)
                             # remove failures from the checkpoint
                             if self.checkpoint is not None:
-                                self.checkpoint.remove(idx)
-                            item = self._batch.items[idx]
+                                self.checkpoint.remove(item_idx)
+                            item = self._batch.items[item_idx]
                             log.error("Upload failed for item {0}; code {1}; {2}".format(
-                               item['title'], v['code'], v['message']))
+                               item['title'], status_msg['code'], status_msg['message']))
                 
                     successes = {}
                     successes.update(status['success'])
                     successes.update(status['unchanged'])
-                
-                    # upload attachments and add items to collections
-                    if self.upload_attachments != "none":
-                        for k, objKey in successes.iteritems():
+                    
+                    for k, objKey in successes.iteritems():
+                        item_idx = int(k)
+                        
+                        # add notes
+                        notes = self._batch.notes[item_idx]
+                        if len(notes) > 0:
+                            note_batch = []
+                            for note_text in notes:
+                                note = self.client.item_template('note')
+                                note['parentItem'] = objKey
+                                note['note'] = note_text
+                                note_batch.append(note)
+                            
+                            note_status = self.client.create_items(note_batch)
+                            
+                            if len(note_status['failed']) > 0:
+                                for status_idx, status_msg in note_status['failed'].iteritems():
+                                    note_idx = int(status_idx)
+                                    # just warn about these failures
+                                    note = note_batch[note_idx]
+                                    log.error("Failed to create note {0} for item item {1}; code {2}; {3}".format(
+                                       note['note'], self.batch.items[idx]['title'], 
+                                       status_msg['code'], status_msg['message']))
+                    
+                        # upload attachments and add items to collections
+                        if self.upload_attachments != "none":
+                        
                             # TODO: modify pyzotero to pass MIME type for contentType key
-                            attachments = list(path for path, mime in self._batch.attachments[int(k)])
+                            attachments = list(path for path, mime in self._batch.attachments[item_idx])
                             if len(attachments) > 0:
                                 try:
                                     self.client.attachment_simple(attachments, objKey)

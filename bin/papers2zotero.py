@@ -88,8 +88,9 @@ def main():
     row_ids = None
     if args.rowids is not None:
         query_args['row_ids'] = map(int, args.rowids.split(","))
-        if max_pubs is None or max_pubs > len(query_args['row_ids']):
-            max_pubs = len(row_ids)
+        num_ids = len(query_args['row_ids'])
+        if max_pubs is None or max_pubs > num_ids:
+            max_pubs = num_ids
     
     # Prepare query
     q = p.get_publications(**query_args)

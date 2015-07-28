@@ -7,7 +7,7 @@ def find_scripts(script_dir):
 setup(
     name='papers2',
 
-    version='0.1',
+    version='0.1.2',
 
     description='API to access Papers2 database, and scripts to convert to other formats',
 

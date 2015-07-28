@@ -35,6 +35,7 @@ def parse_with_config(add_args, sections, short_name="c", long_name="config",
 class Batch(object):
     def __init__(self, max_size):
         self.items = []
+        self.notes = []
         self.attachments = []
         self.max_size = max_size
     
@@ -50,16 +51,18 @@ class Batch(object):
     def is_empty(self):
         return len(self.items) == 0
     
-    def add(self, item, attachments):
+    def add(self, item, notes, attachments):
         self.items.append(item)
+        self.notes.append(notes)
         self.attachments.append(attachments)
     
     def iter(self):
-        for item in zip(self.items, self.attachments):
+        for item in zip(self.items, self.notes, self.attachments):
             yield item
     
     def clear(self):
         self.items = []
+        self.notes = []
         self.attachments = []
 
 # Simple checkpointing facility that maintains a
