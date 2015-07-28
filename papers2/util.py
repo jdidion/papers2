@@ -30,7 +30,6 @@ def parse_with_config(add_args, sections, short_name="c", long_name="config",
     add_args(parser)
     parser.set_defaults(**defaults)
     args = parser.parse_args(args=rest)
-    print vars(args)
     return args
 
 class Batch(object):

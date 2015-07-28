@@ -90,7 +90,10 @@ class Papers2(object):
     def get_publications(self, row_ids=None, types=None, 
             include_deleted=False, include_duplicates=False, include_manuscripts=False):
         Publication = self.get_table("Publication")
-        criteria = []
+        criteria = [
+            Publication.citekey != None,
+            Publication.imported_date != None
+        ]
         
         if row_ids is not None:
             criteria.append(Publication.ROWID.in_(row_ids))
